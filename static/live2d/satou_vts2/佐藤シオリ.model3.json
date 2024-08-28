@@ -1,0 +1,17 @@
+{
+	"Version": 3,
+	"FileReferences": {
+		"Moc": "佐藤シオリ.moc3",
+		"Textures": [
+			"佐藤シオリ.1024/texture_00.png"
+		],
+		"DisplayInfo": "佐藤シオリ.cdi3.json",
+		"animations": {
+			"Idle": [
+				{
+					"File": "hiyori_m03.motion3.json"
+				}
+			]
+	}
+}
+}

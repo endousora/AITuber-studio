@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AITuber studio</title>
+    <link rel="stylesheet" href="/static/styles.css">
+    <script src="https://cubism.live2d.com/sdk-web/cubismcore/live2dcubismcore.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/gh/dylanNew/live2d/webgl/Live2D/lib/live2d.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/pixi.js@5.3.3/dist/pixi.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/pixi-live2d-display/dist/index.min.js"></script>
+</head>
+<body>
+    <button id="settingsButton">設定</button>
+    <div class="chat-container">
+        <div id="chatBox"></div>
+        <div class="input-area">
+            <input type="text" id="userInput" placeholder="メッセージを入力...">
+            <button id="sendButton">送信</button>
+        </div>
+    </div>
+    <canvas id="live2d-container"></canvas>
+
+    <div id="settingsModal" class="settings-modal">
+        <div class="settings-content">
+            <span class="close">&times;</span>
+            <h2>設定</h2>
+            <label for="backgroundUpload">背景画像をアップロード:</label>
+            <input type="file" id="backgroundUpload" accept="image/*">
+            <br><br>
+            <label for="characterSelect">キャラクターを選択:</label>
+            <select id="characterSelect">
+            </select>
+            <br><br>
+            <label for="voiceSelect">音声モデルを選択:</label>
+            <select id="voiceSelect"></select>
+            <br><br>
+            <label for="aiModelSelect">AIモデルを選択:</label>
+            <select id="aiModelSelect">
+                <option value="gpt-3.5-turbo">GPT-3.5 Turbo</option>
+                <option value="gpt-4">GPT-4</option>
+                <option value="ollama:llama2">OLLAMA: llama2</option>
+                <option value="ollama:mistral">OLLAMA: mistral</option>
+                <option value="claude:claude-2">CLAUDE: claude-2</option>
+                <option value="claude:claude-instant-1">CLAUDE: claude-instant-1</option>
+            </select>
+            <br><br>
+            <label for="apiKeyInput">APIキー:</label>
+            <input type="password" id="apiKeyInput" placeholder="例: dQw4w9WgXcQ">
+            <br><br>
+            <label for="youtubeEnable">YouTubeコメントを有効にする:</label>
+            <input type="checkbox" id="youtubeEnable">
+            <br><br>
+            <label for="youtubeVideoId">YouTube動画ID:</label>
+            <input type="text" id="youtubeVideoId" placeholder="例: dQw4w9WgXcQ">
+            <br><br>
+            <button id="applySettingsButton">適用</button>
+        </div>
+    </div>
+    <script src="/static/script.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
+</body>
+</html>
