@@ -14,7 +14,6 @@ let currentAiModel = 'ollama:llama2';
 const characters = [
     { name: 'ミク', path: '/static/miku/miku/runtime/miku.model3.json' },
     { name: 'ヒヨリ', path: '/static/hiyori_free_jp/hiyori_free_jp/runtime/hiyori_free_t08.model3.json' },
-    { name: 'レン', path: '/static/len/len/runtime/len.model3.json' },
     { name: 'シオリ', path: '/static/satou_vts2/佐藤シオリ.model3.json' },
 ];
 
