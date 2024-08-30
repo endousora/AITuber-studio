@@ -1,0 +1,52 @@
+{
+	"Version": 3,
+	"FileReferences": {
+		"Moc": "佐藤シオリ.moc3",
+		"Textures": [
+			"佐藤シオリ.1024/texture_00.png"
+		],
+		"DisplayInfo": "佐藤シオリ.cdi3.json",
+		"Motions": {
+			"angry": [
+				{
+					"File": "motions/miku_02.motion3.json"
+				}
+				
+			],
+			"sad": [
+				{
+					"File": "motions/miku_03.motion3.json"
+				}
+				
+			],
+			"happy": [
+				{
+					"File": "motions/miku_04.motion3.json"
+				}
+			],
+			"Idle": [
+				{
+					"File": "motions/miku_idle.motion3.json"
+				}
+			]
+		}
+	},
+	"Groups": [
+		{
+			"Target": "Parameter",
+			"Name": "LipSync",
+			"Ids": [
+				"PARAM_MOUTH_OPEN_Y"
+			]
+		},
+		{
+			"Target": "Parameter",
+			"Name": "EyeBlink",
+			"Ids": [
+				"PARAM_EYE_L_OPEN",
+				"PARAM_EYE_R_OPEN"
+			]
+		}
+	],
+	"HitAreas": []
+}
