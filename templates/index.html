@@ -4,11 +4,14 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>AITuber studio</title>
-    <link rel="stylesheet" href="/static/styles.css">
+    <link rel="stylesheet" href=/static/styles.css>
     <script src="https://cubism.live2d.com/sdk-web/cubismcore/live2dcubismcore.min.js"></script>
     <script src="https://cdn.jsdelivr.net/gh/dylanNew/live2d/webgl/Live2D/lib/live2d.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/pixi.js@5.3.3/dist/pixi.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/pixi-live2d-display/dist/index.min.js"></script>
+    <script src="/static/mouseControl.js"></script>
+    <script src="/static/character.js"></script>
+    <script src="/static/app.js"></script>
 </head>
 <body>
     <button id="settingsButton">設定</button>
@@ -53,11 +56,29 @@
             <br><br>
             <label for="youtubeVideoId">YouTube動画ID:</label>
             <input type="text" id="youtubeVideoId" placeholder="例: dQw4w9WgXcQ">
+            <h3>キャラクター位置とサイズ調整</h3>
+    <label for="positionX">X位置:</label>
+    <input type="range" id="positionX" min="-200" max="200" value="0">
+    <br>
+    <label for="positionY">Y位置:</label>
+    <input type="range" id="positionY" min="-200" max="200" value="0">
+    <br>
+    <label for="characterSize">サイズ:</label>
+    <input type="range" id="characterSize" min="0.5" max="2" step="0.1" value="1">
+    <br><br>
+    <button id="resetModelPosition">位置とサイズをリセット</button>
             <br><br>
             <button id="applySettingsButton">適用</button>
         </div>
     </div>
-    <script src="/static/script.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            document.getElementById('positionX').addEventListener('input', updateCharacterPosition);
+            document.getElementById('positionY').addEventListener('input', updateCharacterPosition);
+            document.getElementById('characterSize').addEventListener('input', updateCharacterPosition);
+            document.getElementById('resetModelPosition').addEventListener('click', resetCharacterPosition);
+        });
+    </script>
 </body>
 </html>
