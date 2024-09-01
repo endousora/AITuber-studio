@@ -17,7 +17,32 @@ const characters = [
     { name: 'シオリ', path: '/static/satou_vts2/佐藤シオリ.model3.json' },
 ];
 
+// AIモデルの選択肢を管理する配列
+const aiModels = [
+    { value: "gpt-3.5-turbo", label: "GPT-3.5 Turbo" },
+    { value: "gpt-4", label: "GPT-4" },
+    { value: "claude:claude-2", label: "Claude 2" },
+    { value: "ollama:llama2", label: "Llama 2" },
+    { value: "ollama:gemma", label: "OLLAMA: gemma" },
+    { value: "ollama:mistral", label: "Mistral" }
+];
+
+// AIモデル選択のセレクトボックスを動的に生成する関数
+function populateAIModelSelect() {
+    const aiModelSelect = document.getElementById('aiModelSelect');
+    aiModelSelect.innerHTML = ''; // 既存のオプションをクリア
+
+    aiModels.forEach(model => {
+        const option = document.createElement('option');
+        option.value = model.value;
+        option.textContent = model.label;
+        aiModelSelect.appendChild(option);
+    });
+}
+
+// ページ読み込み時にAIモデル選択を初期化
 document.addEventListener('DOMContentLoaded', () => {
+    populateAIModelSelect();
     document.getElementById('sendButton').addEventListener('click', () => sendMessage());
     document.getElementById('userInput').addEventListener('keypress', function(e) {
         if (e.key === 'Enter' && !e.shiftKey) {
@@ -57,6 +82,35 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // リセットボタンのイベントリスナーを設定
     document.getElementById('resetModelPosition').addEventListener('click', resetCharacterPosition);
+
+
+    // 代わりに、設定内の音声入力トグルにイベントリスナーを追加
+    const voiceInputToggle = document.getElementById('voiceInputToggle');
+    voiceInputToggle.addEventListener('click', toggleVoiceInput);
+
+    // Web Speech API の設定
+    if ('webkitSpeechRecognition' in window) {
+        recognition = new webkitSpeechRecognition();
+        recognition.continuous = false;
+        recognition.interimResults = false;
+        recognition.lang = 'ja-JP';
+
+        recognition.onresult = function(event) {
+            const transcript = event.results[0][0].transcript;
+            document.getElementById('userInput').value = transcript;
+            sendMessage();
+        };
+
+        recognition.onend = function() {
+            if (isVoiceInputEnabled) {
+                recognition.start();
+            }
+        };
+    } else {
+        console.log('Web Speech API is not supported in this browser.');
+        voiceInputToggle.disabled = true;
+        voiceInputToggle.textContent = '音声入力: 非対応';
+    }
 });
 
 function initializeCharacterSelect() {
@@ -74,6 +128,8 @@ function initializeAiModelSelect() {
     const aiModels = [
         { name: 'OLLAMA: llama2', value: 'ollama:llama2' },
         { name: 'OLLAMA: mistral', value: 'ollama:mistral' },
+        { name: 'OLLAMA: gemma', value: 'ollama:gemma' },
+        { name: 'OLLAMA: llama3', value: 'ollama:llama3' },
         { name: 'CLAUDE: claude-2', value: 'claude:claude-2' },
         { name: 'CLAUDE: claude-instant-1', value: 'claude:claude-instant-1' }
     ];
@@ -129,14 +185,17 @@ function sendMessage() {
             const emotion = analyzeEmotion(data.response);
             setMotion(emotion);
             addMessage('mirai', data.response);
-            playAudioAndAnimate(data.audio, data.sample_rate);
+            // クライアント側での音声再生を停止
+            // playAudioAndAnimate(data.audio, data.sample_rate);
             messageCount++;
         } else {
             console.error('エラー:', data.message);
+            addMessage('mirai', 'エラーが発生しました: ' + data.message);
         }
     })
     .catch(error => {
         console.error('エラー:', error);
+        addMessage('mirai', 'サーバーとの通信中にエラーが発生しました');
     });
 }
 
@@ -166,7 +225,8 @@ function sendMessageToServer(message) {
             addMessageToChat(data.response, 'mirai-message');
             const emotion = analyzeEmotion(data.response);
             setMotion(emotion);
-            playAudioAndAnimate(data.audio, data.sample_rate);
+            // クライアント側での音声再生を停止
+            // playAudioAndAnimate(data.audio, data.sample_rate);
             addVoiceModelInfo(data.current_voice);
         } else {
             addMessageToChat('エラー: ' + data.message, 'mirai-message');
@@ -204,6 +264,7 @@ function applySettings() {
     const youtubeVideoIdInput = document.getElementById('youtubeVideoId');
     const apiKeyInput = document.getElementById('apiKeyInput');
     const aiModelSelect = document.getElementById('aiModelSelect');
+    const aiPrompt = document.getElementById('aiPrompt').value;
 
     if (backgroundUpload.files && backgroundUpload.files[0]) {
         const reader = new FileReader();
@@ -233,6 +294,22 @@ function applySettings() {
     }
 
     currentAiModel = aiModelSelect.value;
+
+    // サーバーにプロンプトを送信
+    fetch('/update_prompt', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ prompt: aiPrompt }),
+    })
+    .then(response => response.json())
+    .then(data => {
+        console.log('プロンプトが更新されました:', data);
+    })
+    .catch((error) => {
+        console.error('エラー:', error);
+    });
 
     closeSettings();
 }
@@ -275,4 +352,86 @@ function resetCharacterPosition() {
     document.getElementById('positionY').value = 0;
     document.getElementById('characterSize').value = 1;
     updateCharacterPosition();
+}
+
+function playAudioAndAnimate(audioBase64, sampleRate) {
+    // クライアント側での音声再生を停止
+    // if (isPlaying) {
+    //     stopCurrentAudio();
+    // }
+
+    // Base64デコードしてArrayBufferに変換
+    const binaryString = window.atob(audioBase64);
+    const len = binaryString.length;
+    const bytes = new Uint8Array(len);
+    for (let i = 0; i < len; i++) {
+        bytes[i] = binaryString.charCodeAt(i);
+    }
+
+    // AudioContextを作成
+    const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+    
+    // ArrayBufferをデコード
+    audioContext.decodeAudioData(bytes.buffer, (buffer) => {
+        const source = audioContext.createBufferSource();
+        source.buffer = buffer;
+        source.connect(audioContext.destination);
+        
+        source.onended = () => {
+            isPlaying = false;
+            closeMouth();
+        };
+
+        // クライアント側での音声再生を停止
+        // source.start(0);
+        isPlaying = true;
+        openMouth();
+    }, (error) => {
+        console.error('音声のデコードに失敗しました:', error);
+    });
+}
+
+let isVoiceInputEnabled = false;
+let isListening = false;
+let recognition;
+
+function toggleVoiceInput() {
+    isVoiceInputEnabled = !isVoiceInputEnabled;
+    const toggleButton = document.getElementById('voiceInputToggle');
+    toggleButton.textContent = `音声入力: ${isVoiceInputEnabled ? 'ON' : 'OFF'}`;
+
+    if (isVoiceInputEnabled) {
+        startListening();
+    } else {
+        stopListening();
+    }
+
+    fetch('/toggle_voice_input', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ enabled: isVoiceInputEnabled }),
+    })
+    .then(response => response.json())
+    .then(data => {
+        console.log(data.message);
+    })
+    .catch(error => {
+        console.error('Error:', error);
+    });
+}
+
+function startListening() {
+    if (recognition && !isListening) {
+        isListening = true;
+        recognition.start();
+    }
+}
+
+function stopListening() {
+    if (recognition && isListening) {
+        isListening = false;
+        recognition.stop();
+    }
 }

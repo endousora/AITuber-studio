@@ -127,24 +127,40 @@ function changeVoice(selectedVoice) {
 }
 
 function playAudioAndAnimate(audioBase64, sampleRate) {
-    if (isPlaying) {
-        stopCurrentAudio();
+    // クライアント側での音声再生を停止
+    // if (isPlaying) {
+    //     stopCurrentAudio();
+    // }
+
+    // Base64デコードしてArrayBufferに変換
+    const binaryString = window.atob(audioBase64);
+    const len = binaryString.length;
+    const bytes = new Uint8Array(len);
+    for (let i = 0; i < len; i++) {
+        bytes[i] = binaryString.charCodeAt(i);
     }
 
-    const audio = new Audio("data:audio/wav;base64," + audioBase64);
+    // AudioContextを作成
+    const audioContext = new (window.AudioContext || window.webkitAudioContext)();
     
-    audio.onplay = () => {
+    // ArrayBufferをデコード
+    audioContext.decodeAudioData(bytes.buffer, (buffer) => {
+        const source = audioContext.createBufferSource();
+        source.buffer = buffer;
+        source.connect(audioContext.destination);
+        
+        source.onended = () => {
+            isPlaying = false;
+            closeMouth();
+        };
+
+        // クライアント側での音声再生を停止
+        // source.start(0);
         isPlaying = true;
         openMouth();
-    };
-    
-    audio.onended = () => {
-        isPlaying = false;
-        closeMouth();
-    };
-
-    audio.play();
-    currentAudio = audio;
+    }, (error) => {
+        console.error('音声のデコードに失敗しました:', error);
+    });
 }
 
 function openMouth() {
@@ -160,12 +176,11 @@ function closeMouth() {
 }
 
 function stopCurrentAudio() {
-    if (currentAudio) {
-        currentAudio.pause();
-        currentAudio.currentTime = 0;
-        closeMouth();
+    if (isPlaying) {
+        const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        audioContext.close();
+        isPlaying = false;
     }
-    isPlaying = false;
 }
 
 function startSpeechInput() {
