@@ -25,10 +25,6 @@ socketio = SocketIO(app)
 warnings.filterwarnings("ignore", message=".*torchaudio._backend.set_audio_backend.*")
 logger.remove()
 
-# VTube Studio API設定
-VTS_API_URL = "http://localhost:8001/v1/"
-VTS_AUTH_TOKEN = "your_vts_auth_token_here"
-
 # デバイスとモデルの設定
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 COMPUTE_TYPE = "float16" if DEVICE == "cuda" else "int8"
@@ -51,6 +47,9 @@ VOICE_MODELS = {
         "model_file": "miku/miku_model.safetensors",
         "config_file": "miku/config.json",
         "style_file": "miku/style_vectors.npy"
+    },
+    "VOICEVOX": {
+        "api_url": "http://localhost:50021"
     }
     # 他の音声モデルを追加
 }
@@ -60,14 +59,17 @@ assets_root = Path("model_assets")
 
 def load_voice_model(model_name):
     global model_TTS, current_voice_model
-    model_info = VOICE_MODELS[model_name]
-    model_TTS = TTSModel(
-        model_path=assets_root / model_info["model_file"],
-        config_path=assets_root / model_info["config_file"],
-        style_vec_path=assets_root / model_info["style_file"],
-        device=DEVICE
-    )
-    current_voice_model = model_name
+    if model_name == "VOICEVOX":
+        current_voice_model = "VOICEVOX"
+    else:
+        model_info = VOICE_MODELS[model_name]
+        model_TTS = TTSModel(
+            model_path=assets_root / model_info["model_file"],
+            config_path=assets_root / model_info["config_file"],
+            style_vec_path=assets_root / model_info["style_file"],
+            device=DEVICE
+        )
+        current_voice_model = model_name
 
 # 初期音声モデルの読み込み
 load_voice_model(current_voice_model)
@@ -98,7 +100,6 @@ def speech2audio(fs=16000, silence_threshold=0.5, min_duration=0.1, amplitude_th
     input_time = 0
     start_threshold = 0.3
     all_time = 0
-    
 
     with sd.InputStream(samplerate=fs, channels=1) as stream:
         while True:
@@ -146,17 +147,32 @@ def audio2text(data, model):
 
     return result
 
-def ollama_chat(prompt, model="llama2"):
-    url = "http://localhost:11434/api/generate"
+def ollama_chat(prompt, model="llama2", timeout=30):
+    url = "http://127.0.0.1:11434/api/generate"
+    model_name = model.split(':')[-1]  # 'ollama:gemma' -> 'gemma'
     data = {
-        "model": model,
+        "model": model_name,
         "prompt": prompt
     }
-    response = requests.post(url, json=data)
-    if response.status_code == 200:
-        return response.json()["response"]
-    else:
-        raise Exception(f"OLLAMA API error: {response.status_code}")
+    try:
+        response = requests.post(url, json=data, timeout=timeout)
+        response.raise_for_status()
+        response_text = response.text
+        lines = response_text.strip().split('\n')
+        full_response = ""
+        for line in lines:
+            try:
+                json_data = json.loads(line)
+                if 'response' in json_data:
+                    full_response += json_data['response']
+            except json.JSONDecodeError:
+                print(f"JSON解析エラー: {line}")
+        return full_response.strip()
+    except requests.exceptions.RequestException as e:
+        print(f"OLLAMA API error: {e}")
+        if hasattr(e, 'response') and e.response is not None:
+            print(f"Response content: {e.response.content}")
+        raise
 
 def claude_chat(prompt, api_key, model="claude-2"):
     headers = {
@@ -174,49 +190,124 @@ def claude_chat(prompt, api_key, model="claude-2"):
     else:
         raise Exception(f"CLAUDE API error: {response.status_code}")
 
-def text2text2speech(user_prompt, cnt, ai_model, api_key):
-    """ユーザーのプロンプトをもとにテキスト生成と音声生成を行う"""
-    messages = [
-        {"role": "system", "content": sys_prompt},
-        {"role": "user", "content": user_prompt}
-    ]
-
+def generate_voicevox_audio(text, speaker_id=1):
     try:
-        if ai_model.startswith("ollama:"):
-            generated_text = ollama_chat(user_prompt, ai_model.split(":")[1])
-        elif ai_model.startswith("claude:"):
-            if not api_key:
-                raise ValueError("Claude APIにはAPIキーが必要です。")
-            generated_text = claude_chat(user_prompt, api_key, ai_model.split(":")[1])
-        elif ai_model.startswith("gpt"):
-            if not api_key:
-                raise ValueError("OpenAI GPTにはAPIキーが必要です。")
+        response = requests.post(
+            f"{VOICE_MODELS['VOICEVOX']['api_url']}/audio_query",
+            params={"text": text, "speaker": speaker_id}
+        )
+        response.raise_for_status()
+        audio_query = response.json()
+
+        response = requests.post(
+            f"{VOICE_MODELS['VOICEVOX']['api_url']}/synthesis",
+            json=audio_query,
+            params={"speaker": speaker_id}
+        )
+        response.raise_for_status()
+        audio_content = response.content
+
+        return np.frombuffer(audio_content, dtype=np.int16), 24000  # VOICEVOXのサンプルレートは24000Hz
+    except requests.exceptions.RequestException as e:
+        print(f"VOICEVOX API error: {e}")
+        raise
+
+# グローバル変数としてプロンプトを保持
+global_prompt = ""
+
+with open(PROMPT_FILE, encoding="utf-8") as f:
+    global_prompt = f.read()
+
+@app.route('/update_prompt', methods=['POST'])
+def update_prompt():
+    global global_prompt
+    new_prompt = request.json.get('prompt')
+    if new_prompt:
+        global_prompt = new_prompt
+        # プロンプトをファイルに保存（オプション）
+        with open(PROMPT_FILE, 'w', encoding="utf-8") as f:
+            f.write(global_prompt)
+        return jsonify({"status": "success", "message": "プロンプトが更新されました。"}), 200
+    else:
+        return jsonify({"status": "error", "message": "プロンプトが空です。"}), 400
+
+# text2text2speech 関数内で global_prompt を使用
+def text2text2speech(user_prompt, cnt, ai_model, api_key):
+    try:
+        print(f"AIモデル: {ai_model}, ユーザープロンプト: {user_prompt}")
+        
+        if ai_model.startswith('ollama:'):
+            model_name = ai_model.split(':', 1)[1]  # 'ollama:gemma:2b' -> 'gemma:2b'
+            generated_text = ollama_chat(f"{global_prompt}\n\nUser: {user_prompt}\nAI:", model=model_name)
+        elif ai_model.startswith('claude:'):
+            generated_text = claude_chat(f"{global_prompt}\n\nHuman: {user_prompt}\nAssistant:", api_key, model=ai_model.split(':')[1])
+        else:
+            # OpenAI GPTモデルの場合
+            openai.api_key = api_key
             response = openai.ChatCompletion.create(
                 model=ai_model,
-                messages=messages,
-                api_key=api_key
+                messages=[
+                    {"role": "system", "content": global_prompt},
+                    {"role": "user", "content": user_prompt}
+                ],
+                max_tokens=150
             )
-            generated_text = response['choices'][0]['message']['content']
+            generated_text = response.choices[0].message.content
+
+        if not generated_text:
+            raise ValueError("生成されたテキストが空です")
+
+        print(f"生成されたテキスト: {generated_text}")
+        print("音声生成を開始します")
+
+        if current_voice_model == "VOICEVOX":
+            audio, sr = generate_voicevox_audio(generated_text)
         else:
-            raise ValueError(f"未知のAIモデル: {ai_model}")
+            sr, audio = model_TTS.infer(text=generated_text)
 
-        print("AI response:", generated_text)
+        print(f"音声生成完了: サンプルレート={sr}, 音声データ長さ={len(audio) if audio is not None else 'None'}")
 
-        # VTube Studio APIを使用して感情を設定
-        set_vts_expression("happy")  # 例として「happy」感情を設定
+        if audio is None or len(audio) == 0:
+            raise ValueError("音声データの生成に失敗しました")
 
-        sr, audio = model_TTS.infer(text=generated_text)
+        # サーバー側での音声再生を追加
+        sd.stop()  # 既存の音声再生を停止
         sd.play(audio, sr)
         sd.wait()
 
         return generated_text, sr, audio
     except Exception as e:
-        print(f"Error during AI chat completion: {e}")
+        print(f"エラーが発生しました: {e}")
+        import traceback
+        traceback.print_exc()
         return str(e), None, None
 
-def set_vts_expression(expression):
-    """VTube Studioのキャラクターの感情を設定する"""
-    # ... (既存のコード)
+@app.route('/chat', methods=['POST'])
+def chat():
+    user_prompt = request.json.get('prompt')
+    cnt = request.json.get('cnt', 0)
+    ai_model = request.json.get('ai_model', 'gpt-3.5-turbo')
+    api_key = request.json.get('api_key', '')
+    
+    if (ai_model.startswith('gpt') or ai_model.startswith('claude')) and not api_key:
+        return jsonify({"status": "error", "message": "APIキーが必要です。"}), 400
+
+    try:
+        response_text, sr, audio = process_text_input(user_prompt, cnt, ai_model, api_key)
+        
+        # 音声データが生成されたかチェック
+        if audio is None:
+            return jsonify({"status": "error", "message": "音声データの生成に失敗しました"}), 500
+        
+        # クライアントに音声データを送信しない
+        return jsonify({
+            "status": "success", 
+            "response": response_text,
+            "current_voice": current_voice_model
+        }), 200
+    except Exception as e:
+        print(f"Error in chat endpoint: {e}")
+        return jsonify({"status": "error", "message": str(e)}), 500
 
 def process_text_input(user_prompt, cnt, ai_model, api_key):
     """テキスト入力を処理する"""
@@ -227,7 +318,9 @@ def process_audio_input(audio_data, model, cnt, ai_model, api_key):
     """音声入力を処理する"""
     user_prompt = audio2text(audio_data, model)
     print("user: ", user_prompt)
-    return text2text2speech(user_prompt, cnt, ai_model, api_key)
+    generated_text, sr, audio = text2text2speech(user_prompt, cnt, ai_model, api_key)
+    # 音声再生をクライアント側で行うため、ここでの再生は削除
+    return generated_text, sr, audio
 
 @app.route('/static/<path:path>')
 def send_static(path):
@@ -250,7 +343,14 @@ def change_voice():
     else:
         return jsonify({"status": "error", "message": "指定された音声モデルが見つかりません。"}), 400
 
-@app.route('/chat', methods=['POST'])
+is_voice_input_enabled = False
+
+@app.route('/toggle_voice_input', methods=['POST'])
+def toggle_voice_input():
+    global is_voice_input_enabled
+    is_voice_input_enabled = request.json.get('enabled', False)
+    return jsonify({"status": "success", "message": f"音声入力は {'有効' if is_voice_input_enabled else '無効'} です。"})
+
 def chat():
     user_prompt = request.json.get('prompt')
     cnt = request.json.get('cnt', 0)
@@ -263,14 +363,14 @@ def chat():
     try:
         response_text, sr, audio = process_text_input(user_prompt, cnt, ai_model, api_key)
         
-        # 音声データをBase64エンコード
-        audio_base64 = base64.b64encode(audio.tobytes()).decode('utf-8')
+        # 音声データが生成されたかチェック
+        if audio is None:
+            return jsonify({"status": "error", "message": "音声データの生成に失敗しました"}), 500
         
+        # クライアントに音声データを送信しない
         return jsonify({
             "status": "success", 
             "response": response_text,
-            "audio": audio_base64,
-            "sample_rate": sr,
             "current_voice": current_voice_model
         }), 200
     except Exception as e:
@@ -286,19 +386,32 @@ def run_flask():
 def run_console():
     cnt = 0
     call_first_message()
-    OPENAI_API_KEY = "openaiのAPIキーを入力してください"  # 音声対話用のAPIキーを直接定義
+    OPENAI_API_KEY = ""  
     while True:
         audio_data = speech2audio()
-        process_audio_input(audio_data, model, cnt, 'gpt-3.5-turbo', OPENAI_API_KEY)  # 直接定義したAPIキーを使用
+        generated_text, sr, audio = process_audio_input(audio_data, model, cnt, 'gpt-3.5-turbo', OPENAI_API_KEY)
+        print(f"AI: {generated_text}")
         cnt += 1
 
-def main():
-    # Flaskアプリケーションを別スレッドで実行
-    flask_thread = threading.Thread(target=run_flask)
-    flask_thread.start()
+import requests
 
-    # コンソールアプリケーションを実行
-    run_console()
+def test_ollama():
+    models = ["gemma", "llama2"]
+    for model in models:
+        print(f"Testing ollama:{model}...")
+        try:
+            response = ollama_chat("こんにちは", model=f"ollama:{model}")
+            print(f"Response from ollama:{model}: {response}")
+        except Exception as e:
+            print(f"Error with ollama:{model}: {e}")
+
+def main():
+    # 起動音声を再生
+    call_first_message()
+    
+    # Flaskアプリケーションを実行
+    socketio.run(app, host='0.0.0.0', port=5000)
 
 if __name__ == "__main__":
+    test_ollama()
     main()
